@@ -1,12 +1,3 @@
-// ScopeGuard backend — deploy this separately (Render, Railway, Fly.io, etc.)
-// It's the only place your Anthropic API key should ever live.
-//
-// Setup:
-//   1. npm install express cors
-//   2. Set environment variable ANTHROPIC_API_KEY on your hosting platform
-//   3. Deploy. Note the public URL it gives you (e.g. https://scopeguard-api.onrender.com)
-//   4. Put that URL into BACKEND_URL in the app's App.js
-
 const express = require('express');
 const cors = require('cors');
 
@@ -25,29 +16,20 @@ app.post('/review', async (req, res) => {
     return res.status(500).json({ error: 'Server misconfigured: no API key set' });
   }
 
-  const prompt = `You are a contracts reviewer helping an independent freelancer understand a contract or scope-of-work document before they sign it. Analyze the following text.
+  const prompt = `You review freelance contracts. Analyze the text below.
 
-Return ONLY valid JSON (no markdown fences, no preamble) matching exactly this shape:
+Return ONLY valid JSON, no markdown fences, no preamble, matching exactly:
 {
   "flags": [
-    {
-      "severity": "high" | "mid" | "low",
-      "quote": "exact short substring copied verbatim from the source text (max ~12 words) that this finding refers to",
-      "issue": "short title, max 6 words",
-      "suggestion": "1-2 sentence plain-English explanation of the risk and what to ask for instead"
-    }
+    {"severity": "high"|"mid"|"low", "quote": "exact short verbatim substring, max 12 words", "issue": "short title, max 6 words", "suggestion": "1-2 sentence risk + what to ask for instead"}
   ],
-  "email_subject": "short subject line for a follow-up email to the client",
-  "email_draft": "a polite, professional email (150-220 words) the freelancer can send to the client raising the top issues and proposing fixes, signed off generically as [Your Name]"
+  "email_subject": "short subject line",
+  "email_draft": "polite professional email, 130-180 words, signed [Your Name]"
 }
 
-Rules:
-- Find 3 to 6 real issues. Focus on: vague/unlimited scope, missing or weak payment terms, unfavorable IP assignment, missing termination/kill-fee clauses, one-sided non-competes, missing deposit, unclear revision limits.
-- The "quote" field MUST be an exact verbatim substring from the source text so it can be located with a string match. Keep quotes short (under 12 words).
-- If the text has no real issues, return fewer flags and say so honestly in the email draft.
-- Do not invent clauses that are not in the text.
+Find 3-6 real issues. Focus on: vague/unlimited scope, weak payment terms, unfavorable IP assignment, missing termination/kill-fee, one-sided non-competes, missing deposit, unclear revision limits. "quote" must be an exact verbatim substring so it can be string-matched. Don't invent clauses not present.
 
-TEXT TO ANALYZE:
+TEXT:
 """
 ${text}
 """`;
@@ -62,7 +44,7 @@ ${text}
       },
       body: JSON.stringify({
         model: 'claude-sonnet-4-6',
-        max_tokens: 1500,
+        max_tokens: 1100,
         messages: [{ role: 'user', content: prompt }]
       })
     });
