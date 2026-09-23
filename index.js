@@ -3,36 +3,49 @@ const cors = require('cors');
 
 const app = express();
 app.use(cors());
-app.use(express.json({ limit: '2mb' }));
+app.use(express.json({ limit: '15mb' })); // PDFs need more room than plain text
 
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
 
+const INSTRUCTIONS = `You review freelance contracts. Analyze the contract text or document provided.
+
+Return ONLY valid JSON, no markdown fences, no preamble, matching exactly:
+{
+  "flags": [
+    {"severity": "high"|"mid"|"low", "quote": "exact short verbatim substring, max 12 words, or a short paraphrase if reading from a PDF where exact substring matching isn't reliable", "issue": "short title, max 6 words", "suggestion": "1-2 sentence risk + what to ask for instead"}
+  ],
+  "email_subject": "short subject line",
+  "email_draft": "polite professional email, 130-180 words, signed [Your Name]"
+}
+
+Find 3-6 real issues. Focus on: vague/unlimited scope, weak payment terms, unfavorable IP assignment, missing termination/kill-fee, one-sided non-competes, missing deposit, unclear revision limits. Don't invent clauses not present in the document.`;
+
 app.post('/review', async (req, res) => {
-  const { text } = req.body;
-  if (!text || typeof text !== 'string' || text.trim().length === 0) {
+  const { text, pdfBase64, fileName } = req.body;
+
+  const usingPdf = !!pdfBase64;
+  if (!usingPdf && (!text || typeof text !== 'string' || text.trim().length === 0)) {
     return res.status(400).json({ error: 'Missing contract text' });
   }
   if (!ANTHROPIC_API_KEY) {
     return res.status(500).json({ error: 'Server misconfigured: no API key set' });
   }
 
-  const prompt = `You review freelance contracts. Analyze the text below.
-
-Return ONLY valid JSON, no markdown fences, no preamble, matching exactly:
-{
-  "flags": [
-    {"severity": "high"|"mid"|"low", "quote": "exact short verbatim substring, max 12 words", "issue": "short title, max 6 words", "suggestion": "1-2 sentence risk + what to ask for instead"}
-  ],
-  "email_subject": "short subject line",
-  "email_draft": "polite professional email, 130-180 words, signed [Your Name]"
-}
-
-Find 3-6 real issues. Focus on: vague/unlimited scope, weak payment terms, unfavorable IP assignment, missing termination/kill-fee, one-sided non-competes, missing deposit, unclear revision limits. "quote" must be an exact verbatim substring so it can be string-matched. Don't invent clauses not present.
-
-TEXT:
-"""
-${text}
-"""`;
+  let messageContent;
+  if (usingPdf) {
+    messageContent = [
+      {
+        type: 'document',
+        source: { type: 'base64', media_type: 'application/pdf', data: pdfBase64 },
+      },
+      {
+        type: 'text',
+        text: `${INSTRUCTIONS}\n\nThe contract is the attached PDF${fileName ? ` (${fileName})` : ''}.`,
+      },
+    ];
+  } else {
+    messageContent = `${INSTRUCTIONS}\n\nTEXT:\n"""\n${text}\n"""`;
+  }
 
   try {
     const response = await fetch('https://api.anthropic.com/v1/messages', {
@@ -45,7 +58,7 @@ ${text}
       body: JSON.stringify({
         model: 'claude-sonnet-4-6',
         max_tokens: 1100,
-        messages: [{ role: 'user', content: prompt }]
+        messages: [{ role: 'user', content: messageContent }]
       })
     });
 
