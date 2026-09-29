@@ -1,0 +1,19 @@
+node_modules
+
+# Sensitive credentials - never commit these
+*.json
+!package.json
+!package-lock.json
+!app.json
+!eas.json
+
+.env
+.env.local
+*.keystore
+*.jks
+
+.expo/
+dist/
+web-build/
+
+.DS_Store
