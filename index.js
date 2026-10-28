@@ -2,6 +2,7 @@ const express = require('express');
 const cors = require('cors');
 
 const app = express();
+app.set('trust proxy', 1);
 app.use(cors());
 app.use(express.json({ limit: '15mb' })); // PDFs need more room than plain text
 
@@ -77,6 +78,39 @@ app.post('/review', async (req, res) => {
     res.status(500).json({ error: 'Review failed', detail: err.message });
   }
 });
+
+// --- In-app "Report a problem" endpoint ---------------------------------
+// Reports show up in your Render logs, prefixed with "REPORT:".
+// Render's free tier keeps logs only briefly, so check them regularly.
+const reportCounts = new Map(); // ip -> { count, resetAt }
+ 
+app.post('/report', (req, res) => {
+  const ip = req.ip;
+  const now = Date.now();
+  const entry = reportCounts.get(ip);
+  if (!entry || entry.resetAt < now) {
+    reportCounts.set(ip, { count: 1, resetAt: now + 60 * 60 * 1000 });
+  } else if (++entry.count > 10) {
+    return res.status(429).json({ error: 'Too many reports, try again later' });
+  }
+ 
+  const { reason, note, result } = req.body || {};
+  const allowedReasons = ['inaccurate', 'offensive', 'other'];
+  if (!allowedReasons.includes(reason)) {
+    return res.status(400).json({ error: 'Invalid reason' });
+  }
+ 
+  console.log('REPORT:', JSON.stringify({
+    at: new Date().toISOString(),
+    reason,
+    note: typeof note === 'string' ? note.slice(0, 500) : '',
+    result: result ? JSON.stringify(result).slice(0, 4000) : null,
+  }));
+ 
+  res.json({ ok: true });
+});
+// ------------------------------------------------------------------------
+ 
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`ScopeGuard API listening on port ${PORT}`));
